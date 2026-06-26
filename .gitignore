@@ -1,0 +1,19 @@
+# 这是公开框架仓——任何真实决策数据都不该进这里。
+# 以下为防御性忽略：万一有人把数据仓误建在框架仓内，也不会被提交。
+
+# 实例数据（真实文件，非 *.example.md 模板）
+/values.md
+/rules/rules.md
+/models/models.md
+/log/
+/reviews/
+
+# 本地配置
+config.json
+.config/
+
+# OS / 编辑器
+.DS_Store
+*.swp
+.idea/
+.vscode/
