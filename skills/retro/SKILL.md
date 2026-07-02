@@ -1,9 +1,9 @@
 ---
-name: review
-description: 回填决策结果 + 周期复盘个人决策系统。Use when the user says /review, 复盘, 回填结果, 决策复盘, 跑校准, 周复盘, review my decisions, or wants to record outcomes / analyze their decision history in their private decision data repo.
+name: retro
+description: 回填决策结果 + 周期复盘个人决策系统。Use when the user says /retro, 复盘, 回填结果, 决策复盘, 跑校准, 周复盘, review my decisions, or wants to record outcomes / analyze their decision history in their private decision data repo. (曾用名 /review，为避开内置 PR review 命令改名)
 ---
 
-# /review —— 回填结果 + 周期复盘 + 学习
+# /retro —— 回填结果 + 周期复盘 + 学习
 
 对**用户私有的决策数据仓**做结果回填与进化分析。两种模式，先问用户走哪个（或都做）。
 
@@ -14,11 +14,15 @@ description: 回填决策结果 + 周期复盘个人决策系统。Use when the 
 - 下文 `<DATA>` = `data_dir`，`<FW>` = `framework_dir`。权威 schema 见 `<FW>/schema.md`。
 - 今天日期用 `date` 命令取，勿臆造。
 
+## 先跑脚本（两种模式都是）
+
+`python3 <FW>/tools/validate.py`——输出三块：① frontmatter 校验错误（有错先修再继续）② 到期未回填清单（模式 A 的输入）③ 校准与切片统计（模式 B 的输入）。**统计一律以脚本输出为准，不要手算**；脚本跑不了再退回手算并告知用户。
+
 ---
 
 ## 模式 A · 回填结果
 
-1. 扫 `<DATA>/log/` 下所有文件，找 `status: open` 且 `horizon` ≤ 今天的决策。
+1. 用脚本输出的"到期未回填"清单（`status: open` 且 `horizon` ≤ 今天）。
 2. 逐个问用户真实结果。对每个回填：
    - `outcome`：`as-expected` / `better` / `worse` / `mixed`（真实结果 vs 当初 `prediction`）。
    - `resolved_date`：今天。
@@ -27,7 +31,7 @@ description: 回填决策结果 + 周期复盘个人决策系统。Use when the 
    - `status: resolved`。
    - full 决策：在正文"复盘"节写"预测 vs 现实 / 过程 vs 结果 / 规则候选"。
 3. **铁律——过程与结果分离**：明确告诉用户"结果坏 ≠ 决策错"。运气坏但当初信息下过程合理，`process_score` 照样给高分；反之结果好但靠瞎蒙，过程分要低。这是避免"被结果反向洗脑"的核心。
-4. 提交：`git -C <DATA> commit -am "review: 回填 N 个决策"`。
+4. 提交：`git -C <DATA> commit -am "retro: 回填 N 个决策"`。
 
 ---
 
@@ -36,12 +40,12 @@ description: 回填决策结果 + 周期复盘个人决策系统。Use when the 
 读全部 `resolved` 决策，跑三类分析，产出写到 `<DATA>/reviews/YYYY-Www.md` 并提交。
 
 ### 1. 校准
-按 `confidence` 的 **5 档**（`10 / 30 / 50 / 70 / 90`，档外手填值归最近档）分桶，算每桶里预测**真的成真**（对二元预测 ≈ outcome `as-expected`/`better`）的实际比例，对照该档名义概率，指出哪段**系统性高估/低估**。
+按 `confidence` 的 **5 档**（`10 / 30 / 50 / 70 / 90`，档外手填值归最近档）分桶，算每桶里预测**真的成真**（对二元预测 ≈ outcome `as-expected`/`better`）的实际比例，对照该档名义概率，指出哪段**系统性高估/低估**。数据以 `tools/validate.py` 输出为准；**`retrospective: true` 的决策自动排除**（后见之明污染）。
 ⚠️ **不对称下注**（低信心、高赔率，如投资）：低 confidence 落空本就正常，校准只看"你标 30 的事是否约 30% 成真"，**不拿 outcome 好坏评判决策对错**——决策对错归 `process_score`。
 
 ### 2. 模式挖掘
 按 `state / mode / domain / stakes` 及其组合切片，找 `process_score` 系统性偏低或偏高的条件。
-例："周五 + 疲惫 + gut 模式" 平均分明显低于整体。
+例："疲惫 + gut 模式" 平均分明显低于整体。`state` 是标签数组（受控词表见 `<FW>/schema.md`），按单个标签及组合切；发现同义异形标签（如"被催"vs"被催促"）提议用户归一。
 
 ### 3. 规则候选
 把统计上有信号的模式写成 if-then **候选**，登记样本数与依据，列进复盘文件，并问用户是否升级进 `<DATA>/rules/rules.md`（确认才升）。

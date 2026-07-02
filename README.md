@@ -23,7 +23,7 @@ skill 本身不含任何数据、不写死任何人的路径：它从配置 `~/.
 2. 安装两个 skill 到 Claude Code（推荐软链，便于以后随仓库更新）：
    ```bash
    ln -s ~/Desktop/Projects/decision-system/skills/decide ~/.claude/skills/decide
-   ln -s ~/Desktop/Projects/decision-system/skills/review ~/.claude/skills/review
+   ln -s ~/Desktop/Projects/decision-system/skills/retro ~/.claude/skills/retro
    ```
    （或直接 `cp -r` 复制，但更新框架后需重新复制。）
 3. 开个新会话，对 Claude 说 `/decide 我决定了……`。**首次会引导你建私有数据仓**（默认 `~/Desktop/Projects/decisions`），并写好配置。之后全自动。
@@ -32,7 +32,7 @@ skill 本身不含任何数据、不写死任何人的路径：它从配置 `~/.
 ## 怎么用（日常只有两个动作）
 
 1. **做了决策，随口记**：`/decide 我决定了……，我猜……`。AI 自动判轻重、抽取填槽、只追问缺的关键项（尤其"预测+信心+验证日期"），写好文件并提交。
-2. **每周 15 分钟复盘**：`/review`。回填到期决策的真实结果（铁律：**结果坏 ≠ 决策错**，过程与结果分开打分）；跑校准与模式挖掘，提出新的"规则候选"。
+2. **每周 15 分钟复盘**：`/retro`。回填到期决策的真实结果（铁律：**结果坏 ≠ 决策错**，过程与结果分开打分）；跑校准与模式挖掘，提出新的"规则候选"。（曾叫 `/review`，为避开 Claude Code 内置的 PR review 命令改名。）
 
 ## 三层结构
 
@@ -64,7 +64,8 @@ models/models.example.md   思维模型库模板
 examples/             示例决策（脱敏教学用）
 docs/specs/           设计文档
 skills/decide         /decide skill（采集）
-skills/review         /review skill（回填 + 复盘）
+skills/retro          /retro skill（回填 + 复盘）
+tools/validate.py     数据仓校验 + 校准统计脚本（零依赖）
 ```
 
 你的私有数据仓（首次 `/decide` 自动生成）：
