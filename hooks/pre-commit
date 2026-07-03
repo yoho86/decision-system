@@ -1,0 +1,15 @@
+#!/bin/sh
+# 决策数据仓 pre-commit：commit 时自动跑 schema 校验，有错误拦下（警告放行）。
+# 数据仓启用（钩子文件留在框架仓，更新自动生效，无复制无漂移）：
+#   git -C <数据仓> config core.hooksPath <框架仓>/hooks
+# 临时绕过：git commit --no-verify
+
+REPO=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+# 只对决策数据仓生效（框架仓自己没有 log/，跳过）
+[ -d "$REPO/log" ] || exit 0
+
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+VALIDATOR="$DIR/../tools/validate.py"
+[ -f "$VALIDATOR" ] || exit 0
+
+exec python3 "$VALIDATOR" --data-dir "$REPO" --quiet

@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """决策数据仓校验 + 统计（零依赖，python3 直接跑）。
 
-三块输出：
-  1. frontmatter 校验（必填/枚举/格式/一致性，E=错误 W=警告）
+四块输出：
+  1. frontmatter 校验（必填/枚举/格式/一致性 + criteria 词表联动，E=错误 W=警告）
   2. 到期未回填清单（status: open 且 horizon <= 今天）
-  3. 校准与切片统计（retrospective 自动排除出校准）
+  3. 系统健康度（采集断流/回填拖延——系统自身是否还活着）
+  4. 校准与切片统计（retrospective 与 outcome=void 自动排除出校准）
 
 用法：
   python3 tools/validate.py                  # 从 ~/.config/decision-system/config.json 取 data_dir
   python3 tools/validate.py --data-dir PATH  # 显式指定数据仓
+  python3 tools/validate.py --quiet          # 只做校验、只在有问题时输出（pre-commit 用）
 
 退出码：有校验错误 → 1，否则 0。schema 权威定义见仓库根 schema.md。
 """
@@ -28,15 +30,18 @@ ENUMS = {
     "reversibility": {"reversible", "costly", "irreversible"},
     "mode": {"gut", "analysis", "rule", "external", "auto"},
     "status": {"open", "resolved"},
-    "outcome": {"as-expected", "better", "worse", "mixed"},
+    "outcome": {"as-expected", "better", "worse", "mixed", "void"},
 }
 
-# schema.md：micro 只强制这些；full 另需 mode
+# 校准只认这些 outcome；void = 预测失效，排除
+CALIBRATABLE = {"as-expected", "better", "worse", "mixed"}
+
+# schema.md：micro 也强制 mode（gut vs analysis 是最值钱的切片维度）
 REQUIRED_MICRO = [
-    "id", "title", "domain", "tier", "stakes", "reversibility",
+    "id", "title", "domain", "tier", "stakes", "reversibility", "mode",
     "chosen", "prediction", "confidence", "horizon", "status",
 ]
-REQUIRED_FULL_EXTRA = ["mode"]
+REQUIRED_FULL_EXTRA = []
 
 ANCHORS = [10, 30, 50, 70, 90]
 ID_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{3}$")
@@ -142,8 +147,9 @@ def validate_file(path, fm, seen_ids):
 
     for key in ("horizon", "resolved_date"):
         val = fm.get(key)
-        if val not in (None, "") and not DATE_RE.match(str(val)):
-            errors.append(f"E: {key} 应为 YYYY-MM-DD，实际 {val!r}")
+        if val not in (None, "") and (
+                not DATE_RE.match(str(val)) or parse_iso(val) is None):
+            errors.append(f"E: {key} 应为真实存在的 YYYY-MM-DD 日期，实际 {val!r}")
 
     status = fm.get("status")
     if status == "resolved":
@@ -152,10 +158,20 @@ def validate_file(path, fm, seen_ids):
                 errors.append(f"E: status=resolved 但 {key} 未回填")
         if fm.get("lesson") in (None, ""):
             warns.append("W: status=resolved 但 lesson 为空（建议一句话沉淀）")
+        if fm.get("outcome") not in (None, "", "void") \
+                and not isinstance(fm.get("prediction_true"), bool):
+            warns.append("W: status=resolved 但缺 prediction_true（预测字面成真与否，"
+                         "校准的直接输入）——该决策会被排除出校准")
     elif status == "open":
-        for key in ("outcome", "resolved_date", "process_score"):
+        for key in ("prediction_true", "outcome", "resolved_date", "process_score"):
             if fm.get(key) not in (None, ""):
                 warns.append(f"W: status=open 但 {key} 已有值（忘了改 status？）")
+
+    pt = fm.get("prediction_true")
+    if pt not in (None, "") and not isinstance(pt, bool):
+        errors.append(f"E: prediction_true 只允许 true/false，实际 {pt!r}")
+    if pt is not None and fm.get("outcome") == "void":
+        warns.append("W: outcome=void（无法判定）却填了 prediction_true——矛盾，请删其一")
 
     ps = fm.get("process_score")
     if ps not in (None, "") and (not isinstance(ps, int) or not (1 <= ps <= 5)):
@@ -178,7 +194,54 @@ def validate_file(path, fm, seen_ids):
 
 
 def nearest_anchor(conf):
-    return min(ANCHORS, key=lambda a: abs(a - conf))
+    # 平局向上取（80 → 90 档）：对过度自信从严，见 schema.md
+    return min(ANCHORS, key=lambda a: (abs(a - conf), -a))
+
+
+def unpushed_count(data_dir):
+    """数据仓本地领先上游的提交数；数据仓不是独立 git 仓根 / 无上游 → None。"""
+    import subprocess
+    try:
+        top = subprocess.run(
+            ["git", "-C", str(data_dir), "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=5)
+        if top.returncode != 0 or Path(top.stdout.strip()).resolve() != Path(data_dir).resolve():
+            return None
+        r = subprocess.run(
+            ["git", "-C", str(data_dir), "rev-list", "--count", "@{u}..HEAD"],
+            capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            return int(r.stdout.strip())
+        return -1  # 是独立仓但没有上游：无异地备份
+    except Exception:
+        return None
+
+
+def parse_iso(val):
+    try:
+        return date.fromisoformat(str(val)[:10])
+    except ValueError:
+        return None
+
+
+def load_criteria_vocab(data_dir):
+    """读 values.md「criteria 词表」节；未填（只剩示例/占位）→ 空列表。"""
+    vm = data_dir / "values.md"
+    if not vm.exists():
+        return []
+    vocab, in_sec = [], False
+    for line in vm.read_text(encoding="utf-8").splitlines():
+        if re.match(r"^#{1,6}\s", line):
+            in_sec = "criteria 词表" in line
+            continue
+        if in_sec:
+            m = re.match(r"^-\s+(.+)$", line.strip())
+            if m:
+                item = m.group(1).strip()
+                if "【示例" in item or item.startswith("（"):
+                    continue
+                vocab.append(item)
+    return vocab
 
 
 def fmt_slice(rows):
@@ -189,6 +252,8 @@ def fmt_slice(rows):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--data-dir", help="数据仓路径；缺省读 config.json")
+    ap.add_argument("--quiet", action="store_true",
+                    help="只做校验、只在有问题时输出（pre-commit 用）")
     args = ap.parse_args()
 
     if args.data_dir:
@@ -204,15 +269,22 @@ def main():
     files = sorted(log_dir.glob("*/*.md"))
     decisions, seen_ids = [], {}
     total_errors = 0
+    vocab = load_criteria_vocab(data_dir)
 
-    print(f"数据仓：{data_dir}（{len(files)} 个决策文件）\n")
-    print("== 1. 校验 ==")
+    if not args.quiet:
+        print(f"数据仓：{data_dir}（{len(files)} 个决策文件）\n")
+        print("== 1. 校验 ==")
     clean = True
     for path in files:
         errs = []
         fm = parse_frontmatter(path.read_text(encoding="utf-8"), errs)
         e, w = validate_file(path, fm, seen_ids)
         errs += e
+        if vocab and isinstance(fm.get("criteria"), list):
+            unknown = [str(c) for c in fm["criteria"] if str(c) not in vocab]
+            if unknown:
+                w.append(f"W: criteria {unknown} 不在 values.md「criteria 词表」——"
+                         "同义异形会弄断切片；新维度请先加进词表")
         if errs or w:
             clean = False
             print(f"  {path.relative_to(data_dir)}")
@@ -220,8 +292,16 @@ def main():
                 print(f"    {line}")
         total_errors += len(errs)
         decisions.append(fm)
-    if clean:
+    if clean and not args.quiet:
         print("  全部通过 ✓")
+    if not vocab and not args.quiet:
+        print("  （values.md「criteria 词表」未填，跳过 criteria 联动校验）")
+
+    if args.quiet:
+        if total_errors:
+            print(f"\npre-commit 校验失败：{total_errors} 个错误，先修再提交"
+                  "（绕过：git commit --no-verify）", file=sys.stderr)
+        sys.exit(1 if total_errors else 0)
 
     today = date.today().isoformat()
     print("\n== 2. 到期未回填（status: open 且 horizon ≤ 今天）==")
@@ -239,9 +319,43 @@ def main():
         for d in sorted(pending, key=lambda d: str(d.get("horizon"))):
             print(f"  [{d.get('horizon')}] {d.get('title')}（{d.get('id')}）")
 
-    print("\n== 3. 统计 ==")
     resolved = [d for d in decisions if d.get("status") == "resolved"]
     n_open = sum(1 for d in decisions if d.get("status") == "open")
+
+    print("\n== 3. 系统健康度 ==")
+    today_d = date.today()
+    id_dates = sorted(filter(None, (parse_iso(d.get("id")) for d in decisions)))
+    if id_dates:
+        days_since = (today_d - id_dates[-1]).days
+        recent = sum(1 for dt in id_dates if (today_d - dt).days < 28)
+        print(f"  距上次记录：{days_since} 天（最后一条 {id_dates[-1]}）"
+              + ("　⚠️ 断流 >7 天——先想摩擦在哪，别先怪自律" if days_since > 7 else ""))
+        print(f"  近 4 周采集：{recent} 条（≈ {recent / 4:.1f} 条/周）")
+    else:
+        print("  尚无任何决策记录")
+    delays = []
+    for d in resolved:
+        h, r = parse_iso(d.get("horizon")), parse_iso(d.get("resolved_date"))
+        if h and r:
+            delays.append(max(0, (r - h).days))
+    if delays:
+        print(f"  回填及时率：horizon→回填 平均拖 {sum(delays) / len(delays):.1f} 天，"
+              f"最长 {max(delays)} 天（n={len(delays)}）")
+    if due:
+        print(f"  ⚠️ 当前逾期未回填：{len(due)} 条（见上）")
+    n_micro = sum(1 for d in decisions if d.get("tier") == "micro")
+    n_full = sum(1 for d in decisions if d.get("tier") == "full")
+    print(f"  tier 比例：micro {n_micro} / full {n_full}"
+          + ("　⚠️ 没有 micro——高频小决策才是数据的主粮" if decisions and n_micro == 0 else ""))
+    up = unpushed_count(data_dir)
+    if up == -1:
+        print("  ⚠️ 数据仓没有远端上游——数据无异地备份，建议连一个私有远端")
+    elif up is not None and up > 0:
+        print(f"  ⚠️ 本地领先远端 {up} 个提交未推送——记完就 push，别攒")
+    elif up == 0:
+        print("  备份：已与远端同步 ✓")
+
+    print("\n== 4. 统计 ==")
     domains = {}
     for d in decisions:
         domains[d.get("domain", "?")] = domains.get(d.get("domain", "?"), 0) + 1
@@ -251,10 +365,18 @@ def main():
     calib = [d for d in resolved
              if d.get("retrospective") is not True
              and isinstance(d.get("confidence"), int)
-             and d.get("outcome") in ENUMS["outcome"]]
+             and d.get("outcome") in CALIBRATABLE
+             and isinstance(d.get("prediction_true"), bool)]
     n_retro = sum(1 for d in resolved if d.get("retrospective") is True)
-    print(f"\n  校准（resolved 且非 retrospective，n={len(calib)}"
-          + (f"；已排除 retrospective {n_retro} 条" if n_retro else "") + "）")
+    n_void = sum(1 for d in resolved if d.get("outcome") == "void")
+    n_nopt = sum(1 for d in resolved
+                 if d.get("retrospective") is not True
+                 and d.get("outcome") in CALIBRATABLE
+                 and not isinstance(d.get("prediction_true"), bool))
+    excluded = (f"；已排除 retrospective {n_retro} 条" if n_retro else "") \
+        + (f"；已排除 void（预测失效）{n_void} 条" if n_void else "") \
+        + (f"；缺 prediction_true 排除 {n_nopt} 条" if n_nopt else "")
+    print(f"\n  校准（命中 = prediction_true 字面成真，n={len(calib)}{excluded}）")
     if len(calib) < 20:
         print("  ⚠️ 样本 <20，统计不可靠，只做趋势提示，别急着定规则。")
     buckets = {a: [] for a in ANCHORS}
@@ -264,7 +386,7 @@ def main():
         ds = buckets[a]
         if not ds:
             continue
-        hits = sum(1 for d in ds if d["outcome"] in ("as-expected", "better"))
+        hits = sum(1 for d in ds if d["prediction_true"] is True)
         print(f"    档 {a:>2}%：n={len(ds)}，成真 {hits}/{len(ds)}"
               f"（实际 {100 * hits / len(ds):.0f}% vs 名义 {a}%）")
 

@@ -1,0 +1,19 @@
+name: validate
+
+# schema.md、tools/validate.py、tests/fixture 三者互锁：
+# 任何一个改了而其他没跟上，fixture 校验就会红。
+on:
+  push:
+  pull_request:
+
+jobs:
+  fixture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: include examples (single source, no fixture copy to drift)
+        run: cp examples/*.md tests/fixture/log/2026/
+      - name: validate fixture data repo
+        run: python3 tools/validate.py --data-dir tests/fixture
+      - name: quiet mode (pre-commit path) also passes
+        run: python3 tools/validate.py --data-dir tests/fixture --quiet

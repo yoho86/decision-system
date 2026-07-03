@@ -26,8 +26,14 @@ skill 本身不含任何数据、不写死任何人的路径：它从配置 `~/.
    ln -s ~/Desktop/Projects/decision-system/skills/retro ~/.claude/skills/retro
    ```
    （或直接 `cp -r` 复制，但更新框架后需重新复制。）
-3. 开个新会话，对 Claude 说 `/decide 我决定了……`。**首次会引导你建私有数据仓**（默认 `~/Desktop/Projects/decisions`），并写好配置。之后全自动。
-4. 打开你数据仓里的 `values.md`，把【示例】换成你自己的（30 分钟，是整套系统最值的投入）。
+3. 开个新会话，对 Claude 说 `/decide 我决定了……`。**首次会引导你建私有数据仓**（默认 `~/Desktop/Projects/decisions`），并写好配置、挂好校验钩子。之后全自动。
+4. （已有数据仓的老用户）手动挂一次校验钩子，commit 时自动跑 schema 校验：
+   ```bash
+   git -C <你的数据仓> config core.hooksPath ~/Desktop/Projects/decision-system/hooks
+   ```
+5. 打开你数据仓里的 `values.md`，把【示例】换成你自己的（30 分钟，是整套系统最值的投入），尤其「criteria 词表」——`/decide` 的 `criteria` 字段只从那里取。
+
+> 换机器迁移：配置在 `~/.config/decision-system/config.json`（不在任何仓里），记得带上或收进 dotfiles；数据仓 clone 下来后重挂一次 core.hooksPath 即可。
 
 ## 怎么用（日常只有两个动作）
 
@@ -65,7 +71,10 @@ examples/             示例决策（脱敏教学用）
 docs/specs/           设计文档
 skills/decide         /decide skill（采集）
 skills/retro          /retro skill（回填 + 复盘）
-tools/validate.py     数据仓校验 + 校准统计脚本（零依赖）
+tools/validate.py     数据仓校验 + 健康度 + 校准统计脚本（零依赖）
+hooks/pre-commit      数据仓校验钩子（core.hooksPath 指过来即生效）
+reviews/review.example.md  周复盘固定模板（/retro 模式 B 产出格式）
+tests/fixture/        CI 用迷你数据仓（schema/脚本/示例三者互锁）
 ```
 
 你的私有数据仓（首次 `/decide` 自动生成）：

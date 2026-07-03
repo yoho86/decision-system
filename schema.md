@@ -16,14 +16,14 @@
 |---|---|---|---|
 | `id` | ✓ | `YYYY-MM-DD-NNN` | 当天序号，唯一 |
 | `title` | ✓ | 文本 | 一句话标题 |
-| `domain` | ✓ | 自由标签 | 如 投资 / 工作 / 健康 / 产品；仅用于切片，schema 本身通用 |
+| `domain` | ✓ | 自由标签 | 如 投资 / 工作 / 健康 / 产品；仅用于切片，schema 本身通用。**先复用已有决策里的 domain 值**，别造同义新词（租房 vs 居住会弄断切片） |
 | `source` | △ | 文本/链接 | 决策来源溯源。从别的项目沉淀来的标这里，如 `prd:yourproduct/context/decisions.md#某决策行`；手记的可空 |
 | `tier` | ✓ | `micro` \| `full` | 记录深度，由赌注决定 |
 | `stakes` | ✓ | `low` \| `medium` \| `high` | 后果量级 |
 | `reversibility` | ✓ | `reversible` \| `costly` \| `irreversible` | 贝佐斯 Type 2 / Type 1 |
 | `state` | △ | 标签数组 | 决策当下的状态，如 `[被催促, 怕错过]`。**用受控词表**（见下），可自由补充。模式挖掘的金矿，强烈建议填 |
 | `mode` | ✓ | `gut` \| `analysis` \| `rule` \| `external` \| `auto` | 你怎么决的（`auto` = 阶段4 AI 自主决策） |
-| `criteria` | △ | 标签数组 | 这次取用了哪几条 value，如 `[现金流, 学习价值, 自主权]` |
+| `criteria` | △ | 标签数组 | 这次取用了哪几条 value，如 `[现金流, 学习价值, 自主权]`。**只从数据仓 `values.md`「criteria 词表」取**（validate.py 联动校验）；要用新标签先加进词表 |
 | `models` | △ | 标签数组 | 这次推理用到的**思维模型**，如 `[机会成本, 沉没成本]`。用到即收录、理解在实践中收集（见 `models/models.md`）；`[]` = 没用任何模型，本身也是信号 |
 | `chosen` | ✓ | 文本 | 最终选了什么 |
 | `prediction` | ✓ | 文本 | 预测的结果（发动机之一）。**一条只赌一件可判定真假的事**（见下） |
@@ -45,12 +45,13 @@
 
 | 字段 | 取值 | 说明 |
 |---|---|---|
-| `outcome` | `as-expected` \| `better` \| `worse` \| `mixed` | 真实结果 vs 预测 |
+| `prediction_true` | `true` \| `false` | 当初那句预测**字面上**成真了吗——**校准引擎的直接输入**。与 `outcome` 正交：预测坏事而坏事发生 = `prediction_true: true` + `outcome: worse`。无法判定 → 不填此字段，`outcome` 记 `void` |
+| `outcome` | `as-expected` \| `better` \| `worse` \| `mixed` \| `void` | **结果好坏 vs 预期**（度量福祉，不度量预测对错）。`void` = 预测失效/无法判定（如前提消失：搬走了、项目取消了）——排除校准，但 `process_score` 照打（过程好坏与预测能否判定无关） |
 | `resolved_date` | `YYYY-MM-DD` | 回填日期 |
-| `process_score` | `1-5` | **抛开运气**，决策过程本身好不好 |
+| `process_score` | `1-5` | **抛开运气**，决策过程本身好不好。**按清单打，别凭感觉**：基础 1 分，四项当时做了各 +1——①列了备选项（含"什么都不做"）②写了关键假设 ③做了 premortem ④尽调没被压力砍。凭感觉打分必被已知的结果污染 |
 | `lesson` | 文本 | 一句话沉淀 |
 
-**micro 决策**：只需 frontmatter，且只强制 `id/title/domain/tier/stakes/reversibility/chosen/prediction/confidence/horizon/status`。
+**micro 决策**：只需 frontmatter，且只强制 `id/title/domain/tier/stakes/reversibility/mode/chosen/prediction/confidence/horizon/status`（`mode` 一个词的成本，换 gut vs analysis 这个最值钱的切片维度）。
 **full 决策**：完整 frontmatter + 下方正文。
 
 ---
@@ -73,7 +74,7 @@
 
 `confidence` = 你认为**你写的那条 `prediction` 会成真**的概率（0-100）。
 不是"我多喜欢这个选择"、不是"这决定有多好"，而是"我赌的那个结果，实际发生的可能性多大"。
-它是**校准引擎**的唯一钩子：攒够数据后系统回查——你说 70% 的事，是不是约 70% 真发生了？常年说高、实则偏低，就是系统性过度自信。
+它是**校准引擎**的概率钩子：攒够数据后系统回查——你说 70% 的事，是不是约 70% 真发生了？常年说高、实则偏低，就是系统性过度自信。"真发生了没"以回填的 `prediction_true`（字面成真与否）为准，**不是** `outcome` 的好坏——预测坏事而坏事发生，是一次成功的预测。
 
 ### 5 档锚点（等距对称，存代表值）
 
@@ -85,7 +86,7 @@
 | ④ | 挺有把握（多半会） | `70` | 多半会，每 3 次错 1 次；≈ 7:3 |
 | ⑤ | 很有把握（板上钉钉级） | `90` | 每 10 次错 1 次；9:1 |
 
-- **锚点是辅助不是牢笼**：懒得想精确值时按档选；心里有更准的数（如 5% 的种子轮长 shot、95% 的 near-certain），直接手填档外值。校准时按最近的档归桶。
+- **锚点是辅助不是牢笼**：懒得想精确值时按档选；心里有更准的数（如 5% 的种子轮长 shot、95% 的 near-certain），直接手填档外值。校准时按最近的档归桶，**平局向上取**（如 80 → 90 档：对过度自信从严）。
 - **封顶 90**：永远别填 100（填了就是给自己挖坑）；真·near-certain 的罕见情况手填 95+。
 
 ### 校正与边界

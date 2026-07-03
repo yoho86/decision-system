@@ -1,5 +1,7 @@
 # 个人决策系统 · 设计文档
 
+> ⚠️ **历史快照（2026-06-23，系统拆分前）**：写作时框架与数据还在同一个仓，目录结构、schema 细节均已过时（如今 schema.md / examples / docs 在框架仓，数据独立私有仓；schema 也已扩展 retrospective / prediction_true / void 等字段）。**现状以仓库根 `README.md` 与 `schema.md` 为准**；本文保留是为了记录最初的设计推理。
+
 - 日期：2026-06-23
 - 状态：已确认，进入实现
 - 形态：本地 Markdown + git + Claude Code 自定义 skill（方案 A）

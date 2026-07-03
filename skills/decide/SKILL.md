@@ -25,6 +25,7 @@ description: 把一个决策记进个人决策系统。Use when the user says /d
 - 问放哪（默认 `~/Desktop/Projects/decisions`）。
 - 建目录；从 `<FW>` 拷模板：`values.example.md`→`<DATA>/values.md`、`rules/rules.example.md`→`<DATA>/rules/rules.md`、`models/models.example.md`→`<DATA>/models/models.md`；建 `<DATA>/log/<当年>/`、`<DATA>/reviews/`。
 - `git -C <DATA> init`；问是否现在连一个【私有】GitHub 远端做备份（可跳过）。
+- 挂校验钩子：`git -C <DATA> config core.hooksPath <FW>/hooks`（commit 时自动跑 schema 校验，钩子在框架仓、更新自动生效）。
 - 写配置 `~/.config/decision-system/config.json`：`{"data_dir": "<DATA>", "framework_dir": "<FW>"}`。
 - 引导完成，**接着把用户本次要记的这个决策正常写进去**（不要让引导变成死胡同）。
 
@@ -37,6 +38,8 @@ description: 把一个决策记进个人决策系统。Use when the user says /d
 ### 2. 抽取填槽
 从用户的话里抽取 schema 字段。能推断的就推断，不要逐条审问。
 - **`state` 记成标签数组**，用受控词表（见 `<FW>/schema.md`）：`疲惫 饥饿 情绪激动 孤独 时间紧 被催促 怕错过 信息不足 冷静`，可补自定义标签但优先词表。用户没提状态时轻问一句（"当时是赶时间还是从容决的？"）；冷静也记——它是对照组。
+- **`domain` 先复用**：扫已有决策的 domain 值，能复用就复用，别造同义新词（租房 vs 居住会弄断切片）。
+- **`criteria` 只从 `<DATA>/values.md`「criteria 词表」取**；用户提出词表外的新维度时，问一句是否把它加进词表（加了再用），别悄悄放行——validate.py 会联动校验。词表还没填时如实采集、不强行套。
 
 ### 3. 自动判 tier
 - 听出**高赌注 / 不可逆 / 牵连大** → `full`。
@@ -76,13 +79,14 @@ micro 决策问到这三件套 + `chosen` 即可。
 - 硬规则：自下而上、用到才收，**不批量灌入**；AI 只提议与记录，**绝不替用户判定他懂了**。
 
 ### 7. 写文件
-- 确定 `id`：数 `<DATA>/log/<当年>/` 里当天已有文件数，序号 +1（`YYYY-MM-DD-NNN`）。
+- 确定 `id`：取 `<DATA>/log/<当年>/` 里**当天已有文件的最大 NNN + 1**（`YYYY-MM-DD-NNN`）。不要数文件数——删过文件后数数会分配出重复 id，撞坏交叉引用。
 - 路径：`<DATA>/log/<当年>/YYYY-MM-DD-NNN-简短标题.md`。
 - micro 只写 frontmatter；full 按 `<FW>/schema.md` 正文结构补全。
 - 结果字段 `outcome/resolved_date/process_score/lesson` 留空，`status: open`。
 
-### 8. 提交
+### 8. 提交 + 备份
 `git -C <DATA> add -A && git -C <DATA> commit -m "decide: <title>"`。
+配置了远端就顺手 `git -C <DATA> push`（私有数据仓，没有理由攒着不备份）；push 失败不阻塞流程，提醒用户一句即可。
 
 ### 9. 回话（简短）
 一句话确认：记了什么、tier、预测+信心+验证日期。不啰嗦。
