@@ -1,16 +1,16 @@
 ---
-name: retro
-description: 回填决策结果 + 周期复盘个人决策系统。Use when the user says /retro, 复盘, 回填结果, 决策复盘, 跑校准, 周复盘, review my decisions, or wants to record outcomes / analyze their decision history in their private decision data repo. (曾用名 /review，为避开内置 PR review 命令改名)
+name: hyh-retro
+description: 回填决策结果 + 周期复盘个人决策系统。Use when the user says /hyh-retro, 复盘, 回填结果, 决策复盘, 跑校准, 周复盘, review my decisions, or wants to record outcomes / analyze their decision history in their private decision data repo.
 ---
 
-# /retro —— 回填结果 + 周期复盘 + 学习
+# /hyh-retro —— 回填结果 + 周期复盘 + 学习
 
 对**用户私有的决策数据仓**做结果回填与进化分析。两种模式，先问用户走哪个（或都做）。
 
 ## 路径解析（每次运行最先做）
 
 读配置 `~/.config/decision-system/config.json`，取 `data_dir`（私有数据仓）与 `framework_dir`（框架仓）。
-- 配置缺失或 `data_dir` 不存在 → 提示用户先跑一次 `/decide`（它会引导建数据仓），本 skill 不重复实现引导。
+- 配置缺失或 `data_dir` 不存在 → 提示用户先跑一次 `/hyh-decide`（它会引导建数据仓），本 skill 不重复实现引导。
 - 下文 `<DATA>` = `data_dir`，`<FW>` = `framework_dir`。权威 schema 见 `<FW>/schema.md`。
 - 今天日期用 `date` 命令取，勿臆造。
 
