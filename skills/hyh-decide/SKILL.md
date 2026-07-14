@@ -1,9 +1,9 @@
 ---
-name: decide
-description: 把一个决策记进个人决策系统。Use when the user says /decide, 记决策, 记一下这个决定, 我决定了, 帮我记个决策, log a decision, or describes a choice they just made/are making and wants it captured. Conversational tiered capture into the user's private decision data repo.
+name: hyh-decide
+description: 把一个决策记进个人决策系统。Use when the user says /hyh-decide, 记决策, 记一下这个决定, 我决定了, 帮我记个决策, log a decision, or describes a choice they just made/are making and wants it captured. Conversational tiered capture into the user's private decision data repo.
 ---
 
-# /decide —— 对话式决策采集
+# /hyh-decide —— 对话式决策采集
 
 把用户口述的一个决策，结构化写进**用户私有的决策数据仓**。
 
